@@ -73,8 +73,21 @@ Welcome!
 
 You're gearing up for the __Start Smart course__, designed to help you leverage AI tools to kickstart your business. Since we'll focus primarily on AI applications, we won't delve deeply into traditional entrepreneurship and management techniques during the course. 
 
-Based on your application form, you are currently at the basic or advanced level on all training topics. Great!
+Based on your application form, you seem know the basics of entrepreneurship and are ready to begin your training. We only recommend refreshing some of your knowledge:
 
+### 1) How to Use ChatGPT (2025): 
+How to get the most out of ChatGPT https://www.youtube.com/watch?v=PDw3Uk9dN9k
+
+### 2) Business Model Canvas Guide: 
+An article detailing how to map out your business model. https://creately.com/guides/business-model-canvas-explained/
+
+### 3) Business Plan Template:
+Access a template tailored for entrepreneurs in Finland and  Estonia. https://uusyrityskeskus.fi/en/planning-a-business/business-plan/ and https://www.tallinn.ee/en/ettevotjale/business-plan
+
+### 4) The Four Futures framework can help you plan for what's next: 
+An article introducing the Four Futures model for scenario planning. https://www.linkedin.com/pulse/four-futures-framework-can-help-you-plan-whats-next-david-mattin
+
+<br><br>
 {ending_text}
 '''
 
@@ -135,14 +148,13 @@ Analyze the student’s provided background information to understand his/her sk
 Final Output Structure: The final output must be written entirely in MARKDOWN, contained within <Smart_Learning_Plan> section with all planning steps explained in <planning> section.  
 When writing SLP, use clear structure and bullet-points. 
 
-Important: 
--Use the provided format of the output where you ONLY complete the parts pointed by parenthesis [...]
--This plan is targeted to support topics of MODULE {module_number} described in <core_modules>
--Do NOT include detailed timetable (e.g., specific dates) for the plan. Student studies in his/her own pace. 
--DO NOT simply copy-paste of core topics or assignments, the plan must be adapted for the student 
--Think which topics are most relevant for this particular student taken into account his preferences and business aims
+Important:
+-This plan is targeted to support topics of MODULE {module_number} 
+-Use the provided template of the output where you ONLY complete the parts pointed by parenthesis [...]
+-DO NOT include detailed timetable (dates or times) for the plan; student studies in his/her own pace
+-Think which objectives and assignments are most relevant for this particular student taken into account his background, preferences and entrepreneurial aims
 
-Now, following all above instructions and given plan structure, write the complete personalized, short to long-term Smart Learning Plan for the student.  
+Now, following all above instructions and given plan structure, write the complete personalized Smart Learning Plan for the student.  
 Remember to use Markdown format and include the plan inside <Smart_Learning_Plan> tags.
 '''
 
@@ -386,7 +398,7 @@ def create_plan_prompt(incoming_survey_data, core_modules_data, study_materials,
         skill_gaps = ""
         recommended_materials_keys = []
         for key, value in incoming_survey_data.items():
-            if '[options 1-3]' in key and 'Beginner' in value:
+            if '[levels 1-3]' in key and 'Beginner' in value:
                 count += 1
                 skill_gaps += f"{key}\n".replace(':','')
                 recommended_materials_keys.append(key)
@@ -395,7 +407,9 @@ def create_plan_prompt(incoming_survey_data, core_modules_data, study_materials,
             beginner_materials_list = []
             beginner_materials_str = ''
             for k, key in enumerate(recommended_materials_keys):
-                material = [y for y in study_materials.index if y in key][0]
+                material = [y for y in study_materials.index if y in key]
+                assert len(material)==1
+                material = material[0]
                 beginner_materials_list.append(str(study_materials.loc[material, 'English']))
                 beginner_materials_str += f"\n### {k + 1} {material}  \n{beginner_materials_list[-1]}\n"
             template = PHASE1_PROMPT_TEMPLATE_BEGINNER
@@ -434,13 +448,14 @@ def create_plan_prompt(incoming_survey_data, core_modules_data, study_materials,
 # -----------------------------
 class SmartPlanGenerator:
     def __init__(self, core_modules_data, study_materials, additional_courses_data, llm_config_large, llm_config_small,
-                 happy_img):
+                 happy_img,misc_columns):
         self.core_modules_data = core_modules_data
         self.study_materials = study_materials
         self.additional_courses_data = additional_courses_data
         self.llm_config_large = llm_config_large
         self.llm_config_small = llm_config_small
         self.happy_img = happy_img
+        self.misc_columns = misc_columns
 
     def remove_border_parentheses(self, text):
         return re.sub(r'^[\[\(\{](.*?)[\]\)\}]$', r'\1', text)
@@ -450,7 +465,9 @@ class SmartPlanGenerator:
         Generates the smart plan for a given phase.
         Returns a dictionary with plan_prompt, smart_plan, pdf content, student_info, recommended_materials, and student_id.
         """
-        prompt, student_info = create_plan_prompt(student_data,self.core_modules_data,self.study_materials, phase=phase)
+
+        cols = [x for x in student_data.index if x not in self.misc_columns]
+        prompt, student_info = create_plan_prompt(student_data[cols],self.core_modules_data,self.study_materials, phase=phase)
 
         if '# TASK #' in prompt:  # LLM is needed
             raw_plan = get_llm_response(prompt, self.llm_config_large)
@@ -475,7 +492,7 @@ STAGES_TO_GENERATE = [1]
 
 def main():
     # Load student survey, study materials and curated materials data
-    additional_courses_data = pd.read_csv(r'data/curated_additional_materials.txt', sep='|', index_col=0)
+    additional_courses_data = pd.read_csv(r'data/curated_additional_materials.txt', sep='|', index_col=0,dtype=str)
     study_materials = pd.read_excel(r'data/beginner_materials.xlsx', index_col=0)
     core_modules_data = {'text': read_text_file(r'data/description_of_training.txt')}
     with open(r'data/description_of_training.txt', 'r', encoding='utf-8') as file:
@@ -484,37 +501,52 @@ def main():
     assert all(
         [('%i' % k) in core_modules_data['dict'][k]['title'] for k in core_modules_data['dict'].keys()]), 'bad keys!'
 
-    incoming_survey_data = pd.read_excel(r'data/upbeat_LA_data_combined_9.4.2025_with_usenames.xlsx', header=[0],skiprows=[0]).transpose()
+    incoming_survey_data = pd.read_excel(r'data/UPBEAT_FINAL_list_15.4.2025.xlsx', header=[0],skiprows=[0],sheet_name='raw').transpose()
 
-    selected = incoming_survey_data.iloc[:, 0].apply(lambda x: x == 1)
+    selected = incoming_survey_data.iloc[:, 0].apply(lambda x: x > 0)
+    misc_columns = list(incoming_survey_data.index[incoming_survey_data.iloc[:, 0].apply(lambda x: x == 2)])
+
     incoming_survey_data = incoming_survey_data.loc[selected, :]
     incoming_survey_data = incoming_survey_data.iloc[:, 1:]
     incoming_survey_data.fillna('NaN', inplace=True)
+    incoming_survey_data = incoming_survey_data.astype(str)
     incoming_survey_data = incoming_survey_data.map(lambda x: x.replace('\n', ' ').strip())
 
     skill_strings = {'Продвинутый: 3': 'Advanced [3]', 'Базовый: 2': 'Basic [2]', 'Новичок: 1': 'Beginner [1]',
                      'Advanced: 3': 'Advanced [3]', 'Basic: 2': 'Basic [2]', 'Beginner: 1': 'Beginner [1]'}
-
     for k, v in skill_strings.items():
         mask = incoming_survey_data.map(lambda x: k in x)
         incoming_survey_data[mask] = v
 
-    incoming_survey_data.index = [
-        next((f"{y} skill-level [options 1-3]:" for y in study_materials.index if y in x), x)
-        for x in incoming_survey_data.index
-    ]
-    incoming_survey_data.index = [x.strip() for x in incoming_survey_data.index]
+    education_strings = {
+        'Другие':'Other',
+        'Профессиональное училище':'Vocational School',
+        'Средняя школа':'High School',
+        'Степень бакалавра':"Bachelor’s Degree",
+        'Степень магистра':"Master’s Degree",
+    }
+    education_ind = [k for k, v in enumerate(incoming_survey_data.index) if 'education' in v][0]
+    # Replace matching values in the row
+    for k, v in education_strings.items():
+        mask = incoming_survey_data.iloc[education_ind, :].apply(lambda x: isinstance(x, str) and k in x)
+        incoming_survey_data.iloc[education_ind, mask] = v
+
+    skills = list(study_materials.index)
+    incoming_survey_data.index = [f"{x} [levels 1-3]:" if x in skills else x for x in incoming_survey_data.index]
+    #incoming_survey_data.index = [x.strip() for x in incoming_survey_data.index]
 
     plan_output_path = r'learning_plans_real'
 
     # Ensure the output directory exists
     os.makedirs(plan_output_path, exist_ok=True)
 
+    incoming_survey_data.to_csv(plan_output_path + r'/processed_survey_data.csv', index=True)
+
     # Create a happy smiley image for later use
     happy_img = create_modern_happy_smiley()
 
     # Initialize the plan generator with study_materials included
-    plan_generator = SmartPlanGenerator(core_modules_data, study_materials, additional_courses_data, llm_config_large,llm_config_small, happy_img)
+    plan_generator = SmartPlanGenerator(core_modules_data, study_materials, additional_courses_data, llm_config_large,llm_config_small, happy_img,misc_columns)
 
     # Check if we need to process any stages
     stages_to_process = []
@@ -539,7 +571,6 @@ def main():
             print(f"Error loading existing study plans: {e}")
             print("Starting with fresh study plans.")
 
-    existing_passwords = {details.get('password') for _, details in existing_study_plans.items()}
     study_plans = existing_study_plans
 
     # Iterate over each student (each column represents one student's survey responses)
@@ -547,7 +578,8 @@ def main():
         print(f'Processing plan {plan_k + 1} of {incoming_survey_data.shape[1]}')
         student_data = incoming_survey_data[col]
 
-        student_username = student_data['username']
+        student_username = student_data['id']
+        student_email = student_data['email']
         student_password = student_data['password']
 
         # Check if this student already exists in our data
@@ -559,6 +591,7 @@ def main():
             study_plans[student_username] = {
                 'data': student_data,
                 'username': student_username,
+                'email': student_email,
                 'password': student_password
             }
 
@@ -618,6 +651,7 @@ def main():
         df_rows.append({
             'username': sid,
             'password': details.get('password', ''),
+            'email': details.get('email', ''),
             'plan_prompt_phase1': details.get('plan_prompt_phase1', ''),
             'plan_prompt_phase2': details.get('plan_prompt_phase2', ''),
             'plan_prompt_phase3': details.get('plan_prompt_phase3', ''),
